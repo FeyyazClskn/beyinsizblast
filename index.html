@@ -379,6 +379,17 @@
     transition: none !important;
   }
 
+  .preview-clear {
+    position: relative;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.9), 0 0 10px rgba(255, 255, 255, 0.9) !important;
+    animation: pulse-clear 0.5s infinite alternate;
+  }
+
+  @keyframes pulse-clear {
+    0% { filter: brightness(1.2); }
+    100% { filter: brightness(2); transform: scale(1.05); z-index: 10; }
+  }
+
   .cell.ex {
     animation: ex .36s ease-out forwards;
   }
@@ -1021,6 +1032,11 @@
     </div>
     <div id="board"></div>
     <div id="pbar">
+      <button class="pb off" id="pb-undo" onclick="undoMove()">
+        <div class="pb-icon">↩️</div>
+        <div class="pb-count" id="uc">∞</div>
+        <div class="pb-desc">GERİ AL</div>
+      </button>
       <button class="pb" id="pb-bomb" onclick="togglePwr('bomb')">
         <div class="pb-icon">💣</div>
         <div class="pb-count" id="bc">3</div>
@@ -1077,18 +1093,57 @@
   };
   const COLORS = Object.keys(COLOR_DATA);
   const SHAPES = [
-    [[1, 1], [1, 1]], [[1, 1, 1]], [[1], [1], [1]], [[1, 1, 1], [0, 1, 0]],
-    [[1, 0], [1, 1], [0, 1]], [[0, 1], [1, 1], [1, 0]], [[1, 1, 1, 1]], [[1], [1], [1], [1]],
-    [[1, 1, 0], [0, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[1, 1], [1, 0], [1, 0]], [[1, 1, 1], [1, 0, 0]],
-    [[1, 1, 1], [0, 0, 1]], [[1, 0], [1, 0], [1, 1]], [[1], [1]], [[1, 1]], [[1]],
-    [[1, 1, 1, 1, 1]], [[1], [1], [1], [1], [1]], [[1, 1, 1], [1, 1, 1]],
-    [[1, 1, 1], [1, 1, 1], [1, 1, 1]]
+    [[1]], // 1x1
+    [[1, 1]], [[1], [1]], // 1x2
+    [[1, 1, 1]], [[1], [1], [1]], // 1x3
+    [[1, 1, 1, 1]], [[1], [1], [1], [1]], // 1x4
+    [[1, 1, 1, 1, 1]], [[1], [1], [1], [1], [1]], // 1x5
+    [[1, 1], [1, 1]], // 2x2
+    [[1, 1, 1], [1, 1, 1], [1, 1, 1]], // 3x3
+    [[1, 1], [1, 0]], [[1, 1], [0, 1]], [[1, 0], [1, 1]], [[0, 1], [1, 1]], // Small L
+    [[1, 1, 1], [1, 0, 0], [1, 0, 0]], [[1, 1, 1], [0, 0, 1], [0, 0, 1]], [[1, 0, 0], [1, 0, 0], [1, 1, 1]], [[0, 0, 1], [0, 0, 1], [1, 1, 1]], // Big L
+    [[1, 1, 1], [0, 1, 0]], [[0, 1, 0], [1, 1, 1]], [[1, 0], [1, 1], [1, 0]], [[0, 1], [1, 1], [0, 1]], // Small T
+    [[1, 1, 1], [0, 1, 0], [0, 1, 0]], [[0, 1, 0], [0, 1, 0], [1, 1, 1]], [[1, 0, 0], [1, 1, 1], [1, 0, 0]], [[0, 0, 1], [1, 1, 1], [0, 0, 1]], // Big T
+    [[1, 1, 0], [0, 1, 1]], [[0, 1, 1], [1, 1, 0]], [[1, 0], [1, 1], [0, 1]], [[0, 1], [1, 1], [1, 0]], // Z / S
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]], // Cross
+    [[1, 1, 1], [1, 1, 1]], [[1, 1], [1, 1], [1, 1]] // 2x3 and 3x2 Rectangles
   ];
 
   let board, score, bestScore, combo, powers, pieces, activePwr, gameOver;
   let drag = { on: false, pi: -1 };
   let actx = null;
   let appScale = 1;
+  let previousState = null;
+
+  function saveState() {
+    previousState = {
+      board: board.map(row => row.map(cell => cell ? { ...cell } : null)),
+      score: score,
+      combo: combo,
+      powers: { ...powers },
+      pieces: pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill })),
+      activePwr: activePwr
+    };
+  }
+
+  function undoMove() {
+    if (!previousState || gameOver) return;
+    initAudio();
+    tone(300, .1, 'sine', .15);
+    
+    board = previousState.board.map(row => row.map(cell => cell ? { ...cell } : null));
+    score = previousState.score;
+    combo = previousState.combo;
+    powers = { ...previousState.powers };
+    pieces = previousState.pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill }));
+    activePwr = previousState.activePwr;
+
+    previousState = null;
+    
+    renderBoard();
+    renderPieces();
+    updateUI();
+  }
 
   function resizeApp() {
     const root = document.getElementById('root');
@@ -1126,7 +1181,7 @@
   function startGame() {
     initAudio(); show('game');
     board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    score = 0; combo = 1; gameOver = false; activePwr = null;
+    score = 0; combo = 1; comboMisses = 0; gameOver = false; activePwr = null; previousState = null;
     bestScore = loadBest();
     powers = { bomb: 3, lightning: 2, freeze: 2 };
     renderBoard(); updateUI(); spawnPieces(); setMsg('');
@@ -1169,6 +1224,8 @@
     document.getElementById('bc').textContent = powers.bomb;
     document.getElementById('lc').textContent = powers.lightning;
     document.getElementById('fc').textContent = powers.freeze;
+    const undoBtn = document.getElementById('pb-undo');
+    if (undoBtn) undoBtn.classList.toggle('off', !previousState);
     ['bomb', 'lightning', 'freeze'].forEach(p => {
       const b = document.getElementById('pb-' + p);
       b.classList.toggle('act', activePwr === p);
@@ -1319,8 +1376,72 @@
     }
   }
 
+  function canPlaceSim(shape, r, c, brd) {
+    return shape.every((row, dr) => row.every((v, dc) => {
+      if (!v) return true;
+      const nr = r + dr, nc = c + dc;
+      return nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !brd[nr][nc];
+    }));
+  }
+
+  function simulateClear(shape, r, c, brd) {
+    let clears = 0;
+    for (let i = 0; i < ROWS; i++) {
+      let rowFull = true;
+      for (let j = 0; j < COLS; j++) {
+        let isShapeHere = (i >= r && i < r + shape.length && j >= c && j < c + shape[0].length && shape[i - r][j - c]);
+        if (!brd[i][j] && !isShapeHere) { rowFull = false; break; }
+      }
+      if (rowFull) clears++;
+    }
+    for (let j = 0; j < COLS; j++) {
+      let colFull = true;
+      for (let i = 0; i < ROWS; i++) {
+        let isShapeHere = (i >= r && i < r + shape.length && j >= c && j < c + shape[0].length && shape[i - r][j - c]);
+        if (!brd[i][j] && !isShapeHere) { colFull = false; break; }
+      }
+      if (colFull) clears++;
+    }
+    return clears;
+  }
+
+  function getSmartShape(brd, prioritizeClear) {
+    let clearShapes = [];
+    let fitShapes = [];
+
+    for (let shape of SHAPES) {
+      let canFit = false;
+      let canClear = false;
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (canPlaceSim(shape, r, c, brd)) {
+            canFit = true;
+            if (simulateClear(shape, r, c, brd) > 0) canClear = true;
+          }
+        }
+      }
+      if (canFit) fitShapes.push(shape);
+      if (canClear) clearShapes.push(shape);
+    }
+
+    if (prioritizeClear && clearShapes.length > 0) return clearShapes[Math.floor(Math.random() * clearShapes.length)];
+    if (fitShapes.length > 0) return fitShapes[Math.floor(Math.random() * fitShapes.length)];
+    return SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  }
+
   function spawnPieces() {
-    pieces = [0, 1, 2].map(() => ({ shape: SHAPES[Math.floor(Math.random() * SHAPES.length)], fill: COLORS[Math.floor(Math.random() * COLORS.length)], used: false }));
+    let p1 = getSmartShape(board, true);
+    let p2 = getSmartShape(board, true);
+    let p3 = getSmartShape(board, false);
+
+    pieces = [p1, p2, p3].map(shape => ({
+      shape: shape,
+      fill: COLORS[Math.floor(Math.random() * COLORS.length)],
+      used: false
+    }));
+    
+    pieces.sort(() => Math.random() - 0.5);
+
     renderPieces();
     checkGameOver();
   }
@@ -1412,6 +1533,7 @@
     if (pos) {
       const p = pieces[drag.pi];
       if (canPlace(p.shape, pos.r, pos.c)) {
+        saveState();
         placePiece(p, pos.r, pos.c); p.used = true;
         playPlace();
         checkClear(() => {
@@ -1454,7 +1576,12 @@
 
   function clearHL() { document.querySelectorAll('.cell.ok,.cell.no,.cell.pwrh,.preview-clear').forEach(el => el.classList.remove('ok', 'no', 'pwrh', 'preview-clear')); }
   function canPlace(shape, r, c) { return shape.every((row, dr) => row.every((v, dc) => { if (!v) return true; const nr = r + dr, nc = c + dc; return nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !board[nr][nc]; })); }
-  function placePiece(p, r, c) { p.shape.forEach((row, dr) => row.forEach((v, dc) => { if (v) board[r + dr][c + dc] = { fill: p.fill }; })); renderBoard(); }
+  function placePiece(p, r, c) { 
+    p.shape.forEach((row, dr) => row.forEach((v, dc) => { 
+      if (v) { board[r + dr][c + dc] = { fill: p.fill }; } 
+    })); 
+    renderBoard(); 
+  }
 
   function togglePwr(name) { initAudio(); activePwr = activePwr === name ? null : name; clearHL(); updateUI(); if (activePwr) tone(880, .08, 'sine', .1); }
 
@@ -1463,16 +1590,19 @@
     e.preventDefault(); initAudio(); clearHL();
     const pn = activePwr;
     if (pn === 'bomb' && powers.bomb > 0) {
+      saveState();
       powers.bomb--;
       const cells = [];
       for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const nr = r + dr, nc = c + dc; if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) { board[nr][nc] = null; cells.push(`${nr}_${nc}`); } }
-      boom(cells, 15, 'BOOM! 💣'); playPow('bomb');
+      boom(cells, 150, 'BOOM! 💣'); playPow('bomb');
     } else if (pn === 'lightning' && powers.lightning > 0) {
+      saveState();
       powers.lightning--;
       const cells = []; for (let c2 = 0; c2 < COLS; c2++) { board[r][c2] = null; cells.push(`${r}_${c2}`); }
-      boom(cells, 20, 'ZAP! ⚡'); playPow('lightning');
+      boom(cells, 200, 'ZAP! ⚡'); playPow('lightning');
     } else if (pn === 'freeze' && powers.freeze > 0) {
-      powers.freeze--; board[r][c] = null; boom([`${r}_${c}`], 5, 'KIRIK! ❄️'); playPow('freeze');
+      saveState();
+      powers.freeze--; board[r][c] = null; boom([`${r}_${c}`], 50, 'KIRIK! ❄️'); playPow('freeze');
     }
     activePwr = null; updateUI();
   }
@@ -1529,9 +1659,20 @@
     for (let r = 0; r < ROWS; r++) if (board[r].every(c => c)) fr.push(r);
     for (let c = 0; c < COLS; c++) if (board.every(r => r[c])) fc.push(c);
     const cl = fr.length + fc.length;
-    if (!cl) { combo = 1; updateUI(); if (onDone) onDone(); return; }
+    if (!cl) { 
+      comboMisses++;
+      if (comboMisses >= 3) {
+        combo = 1;
+        comboMisses = 0;
+      }
+      updateUI(); 
+      if (onDone) onDone(); return; 
+    }
+    comboMisses = 0;
     combo = Math.min(combo + 1, 8);
-    const pts = cl * 10 * combo + (cl > 1 ? 25 : 0);
+    let basePts = cl * 100 + (cl > 1 ? (cl - 1) * 200 : 0);
+    let comboMult = Math.pow(2, combo - 1);
+    const pts = basePts * comboMult;
     addScore(pts, combo >= 3);
     if (combo >= 3) { playCombo(combo); setMsg(`KOMBO x${combo}! +${pts} 🔥`); }
     else { playClear(cl); setMsg(cl > 1 ? `SÜPER! +${pts} ✨` : `+${pts}`); }
