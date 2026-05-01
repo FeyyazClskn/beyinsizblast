@@ -61,29 +61,45 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  html, body {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    background: #07071a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: background 0.8s ease;
+  }
+
   #root {
     background: #f4ecd8;
     background-image: radial-gradient(#d3c2af 1.5px, transparent 1.5px);
     background-size: 24px 24px;
-    transition: all 0.2s ease;
     border-radius: 16px;
     overflow: hidden;
     color: #3e2723;
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 100%;
-    min-height: 580px;
+    width: 390px;
+    height: 640px;
+    flex-shrink: 0;
     touch-action: none;
     font-family: 'Segoe UI', 'SF Pro Display', system-ui, sans-serif;
     position: relative;
     z-index: 0;
+    transform-origin: center center;
   }
 
   #menu,
   #game,
   #over {
     width: 100%;
+    height: 100%;
     display: none;
     flex-direction: column;
     align-items: center;
@@ -92,7 +108,6 @@
   #menu {
     justify-content: center;
     padding: 36px 20px;
-    min-height: 580px;
   }
 
   .logo {
@@ -555,7 +570,7 @@
     display: none;
     justify-content: center;
     padding: 36px 20px;
-    min-height: 580px;
+    height: 100%;
   }
 
   .over-title {
@@ -1073,6 +1088,23 @@
   let board, score, bestScore, combo, powers, pieces, activePwr, gameOver;
   let drag = { on: false, pi: -1 };
   let actx = null;
+  let appScale = 1;
+
+  function resizeApp() {
+    const root = document.getElementById('root');
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const targetW = 390;
+    const targetH = 640;
+    const scaleW = w / targetW;
+    const scaleH = h / targetH;
+    appScale = Math.min(scaleW, scaleH);
+    if (appScale > 1.1) appScale = 1.1; // Allow slight upscaling
+    root.style.transform = `scale(${appScale})`;
+  }
+  window.addEventListener('resize', resizeApp);
+  window.addEventListener('orientationchange', resizeApp);
+  setTimeout(resizeApp, 0);
 
   function initAudio() { if (actx) return; try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
   function tone(f, d, type = 'sine', vol = 0.15, delay = 0) {
@@ -1103,11 +1135,18 @@
   function updateTheme() {
     const root = document.getElementById('root');
     root.classList.remove('theme-neon', 'theme-ice', 'theme-gold');
-    if (score >= 3000) root.classList.add('theme-gold');
-    else if (score >= 1500) root.classList.add('theme-ice');
-    else if (score >= 500) root.classList.add('theme-neon');
+    let currentTheme = '';
+    if (score >= 3000) currentTheme = 'theme-gold';
+    else if (score >= 1500) currentTheme = 'theme-ice';
+    else if (score >= 500) currentTheme = 'theme-neon';
+    
+    if (currentTheme) root.classList.add(currentTheme);
+    
     root.classList.toggle('combo-active', combo >= 3);
     root.classList.toggle('super-combo', combo >= 3);
+
+    const bgMap = { '': '#07071a', 'theme-neon': '#14001a', 'theme-ice': '#00131a', 'theme-gold': '#1a1300' };
+    document.body.style.backgroundColor = bgMap[currentTheme];
 
     const banner = document.getElementById('combo-banner');
     if (combo >= 3) {
@@ -1327,7 +1366,7 @@
     document.addEventListener('pointerup', onDragEnd);
   }
 
-  function moveGhost(cx, cy) { const gh = document.getElementById('drag-ghost'); gh.style.left = cx + 'px'; gh.style.top = cy + 'px'; }
+  function moveGhost(cx, cy) { const gh = document.getElementById('drag-ghost'); gh.style.left = cx + 'px'; gh.style.top = cy + 'px'; gh.style.transform = `translate(-50%, -120%) scale(${appScale})`; }
 
   function onDragMove(e) {
     if (!drag.on) return;
@@ -1389,7 +1428,7 @@
     const rect = bd.getBoundingClientRect();
     if (!drag.on) return null;
     const p = pieces[drag.pi];
-    const step = CS + GAP;
+    const step = (CS + GAP) * appScale;
     const ghostH = p.shape.length * step;
 
     // transform is translate(-50%, -120%).
@@ -1397,8 +1436,8 @@
     const visualCenterY = cy - ghostH * 0.7;
     const visualCenterX = cx;
 
-    const bx = visualCenterX - rect.left - PAD;
-    const by = visualCenterY - rect.top - PAD;
+    const bx = visualCenterX - rect.left - (PAD * appScale);
+    const by = visualCenterY - rect.top - (PAD * appScale);
 
     const centerR = Math.floor(by / step);
     const centerC = Math.floor(bx / step);
@@ -1441,10 +1480,8 @@
   function createParticles(r, c, color) {
     const el = document.getElementById(`c${r}_${c}`);
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const bd = document.getElementById('board').getBoundingClientRect();
-    const cx = rect.left - bd.left + CS / 2;
-    const cy = rect.top - bd.top + CS / 2;
+    const cx = PAD + c * (CS + GAP) + CS / 2;
+    const cy = PAD + r * (CS + GAP) + CS / 2;
     for (let i = 0; i < 6; i++) {
       const p = document.createElement('div');
       p.className = 'particle';
@@ -1478,9 +1515,9 @@
     if (!activePwr || drag.on) return;
     clearHL();
     const rect = document.getElementById('board').getBoundingClientRect();
-    const step = CS + GAP;
-    const r = Math.max(0, Math.min(ROWS - 1, Math.floor((e.clientY - rect.top - PAD) / step)));
-    const c = Math.max(0, Math.min(COLS - 1, Math.floor((e.clientX - rect.left - PAD) / step)));
+    const step = (CS + GAP) * appScale;
+    const r = Math.max(0, Math.min(ROWS - 1, Math.floor((e.clientY - rect.top - PAD * appScale) / step)));
+    const c = Math.max(0, Math.min(COLS - 1, Math.floor((e.clientX - rect.left - PAD * appScale) / step)));
     if (activePwr === 'bomb') { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const el = document.getElementById(`c${r + dr}_${c + dc}`); if (el) el.classList.add('pwrh'); } }
     else if (activePwr === 'lightning') { for (let c2 = 0; c2 < COLS; c2++) { const el = document.getElementById(`c${r}_${c2}`); if (el) el.classList.add('pwrh'); } }
     else { const el = document.getElementById(`c${r}_${c}`); if (el) el.classList.add('pwrh'); }
