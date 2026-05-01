@@ -1011,7 +1011,8 @@
       <div class="lbl">EN YÜKSEK SKOR</div>
       <div class="val" id="menu-best">0</div>
     </div>
-    <button class="btn-play" onclick="startGame()">OYNA</button>
+    <button class="btn-play" id="btn-continue" onclick="startGame(false)" style="display:none; background:#d84315; border-color:#8d2707; box-shadow:0 4px 0 #8d2707;">DEVAM ET</button>
+    <button class="btn-play" onclick="startGame(true)">YENİ OYUN</button>
     <div class="tip">sürükle • bırak • patlat</div>
   </div>
 
@@ -1070,7 +1071,7 @@
     </div>
     <div class="new-rec" id="nb"></div>
     <div class="over-btns">
-      <button class="obtn p" onclick="startGame()">TEKRAR</button>
+      <button class="obtn p" onclick="startGame(true)">TEKRAR</button>
       <button class="obtn s" onclick="goMenu()">MENÜ</button>
     </div>
   </div>
@@ -1115,11 +1116,55 @@
   let appScale = 1;
   let previousState = null;
 
+  function saveGameState() {
+    if (gameOver) return;
+    const state = {
+      board: board.map(row => row.map(cell => cell ? { ...cell } : null)),
+      score, combo, comboMisses, powers: { ...powers },
+      pieces: pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill })),
+      activePwr,
+      previousState: previousState ? {
+        board: previousState.board.map(row => row.map(cell => cell ? { ...cell } : null)),
+        score: previousState.score,
+        combo: previousState.combo,
+        comboMisses: previousState.comboMisses,
+        powers: { ...previousState.powers },
+        pieces: previousState.pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill })),
+        activePwr: previousState.activePwr
+      } : null
+    };
+    try { localStorage.setItem('bb8_save', JSON.stringify(state)); } catch (e) {}
+  }
+
+  function loadGameState() {
+    try {
+      const data = localStorage.getItem('bb8_save');
+      if (!data) return false;
+      const state = JSON.parse(data);
+      board = state.board;
+      score = state.score;
+      combo = state.combo;
+      comboMisses = state.comboMisses || 0;
+      powers = state.powers;
+      pieces = state.pieces;
+      activePwr = state.activePwr;
+      previousState = state.previousState;
+      gameOver = false;
+      renderBoard();
+      renderPieces();
+      updateUI();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function saveState() {
     previousState = {
       board: board.map(row => row.map(cell => cell ? { ...cell } : null)),
       score: score,
       combo: combo,
+      comboMisses: comboMisses,
       powers: { ...powers },
       pieces: pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill })),
       activePwr: activePwr
@@ -1134,6 +1179,7 @@
     board = previousState.board.map(row => row.map(cell => cell ? { ...cell } : null));
     score = previousState.score;
     combo = previousState.combo;
+    comboMisses = previousState.comboMisses || 0;
     powers = { ...previousState.powers };
     pieces = previousState.pieces.map(p => ({ ...p, shape: p.shape.map(r => [...r]), used: p.used, fill: p.fill }));
     activePwr = previousState.activePwr;
@@ -1143,6 +1189,7 @@
     renderBoard();
     renderPieces();
     updateUI();
+    saveGameState();
   }
 
   function resizeApp() {
@@ -1176,15 +1223,29 @@
   function saveBest(s) { try { localStorage.setItem('bb8', s); } catch (e) { } }
 
   function show(id) { ['menu', 'game', 'over'].forEach(x => { const el = document.getElementById(x); el.style.display = el.id === id ? 'flex' : 'none'; }); }
-  function goMenu() { show('menu'); document.getElementById('menu-best').textContent = loadBest(); }
+  function goMenu() { 
+    show('menu'); 
+    document.getElementById('menu-best').textContent = loadBest(); 
+    if (localStorage.getItem('bb8_save')) {
+      document.getElementById('btn-continue').style.display = 'inline-block';
+    } else {
+      document.getElementById('btn-continue').style.display = 'none';
+    }
+  }
 
-  function startGame() {
+  function startGame(forceNew = true) {
     initAudio(); show('game');
+    bestScore = loadBest();
+    if (!forceNew && loadGameState()) {
+      setMsg('KALDIĞINIZ YERDEN DEVAM...');
+      setTimeout(() => setMsg(''), 1500);
+      return;
+    }
     board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     score = 0; combo = 1; comboMisses = 0; gameOver = false; activePwr = null; previousState = null;
-    bestScore = loadBest();
     powers = { bomb: 3, lightning: 2, freeze: 2 };
     renderBoard(); updateUI(); spawnPieces(); setMsg('');
+    try { localStorage.removeItem('bb8_save'); } catch(e) {}
   }
 
   function updateTheme() {
@@ -1666,6 +1727,7 @@
         comboMisses = 0;
       }
       updateUI(); 
+      saveGameState();
       if (onDone) onDone(); return; 
     }
     comboMisses = 0;
@@ -1688,7 +1750,12 @@
         if (board[r][c]) createParticles(r, c, board[r][c].fill);
       }
     });
-    setTimeout(() => { tc.forEach(k => { const [r, c] = k.split('_').map(Number); board[r][c] = null; }); renderBoard(); if (onDone) onDone(); }, 380);
+    setTimeout(() => { 
+      tc.forEach(k => { const [r, c] = k.split('_').map(Number); board[r][c] = null; }); 
+      renderBoard(); 
+      saveGameState();
+      if (onDone) onDone(); 
+    }, 380);
   }
 
   function canPlaceAny() { return pieces.some(p => { if (p.used) return false; for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (canPlace(p.shape, r, c)) return true; return false; }); }
@@ -1701,6 +1768,7 @@
 
   function endGame() {
     gameOver = true; playOver();
+    try { localStorage.removeItem('bb8_save'); } catch(e) {}
     if (score > bestScore) { bestScore = score; saveBest(bestScore); }
 
     for (let r = 0; r < ROWS; r++) {
@@ -1717,6 +1785,9 @@
 
     setTimeout(() => { show('over'); document.getElementById('ov').textContent = score; document.getElementById('ob').textContent = bestScore; document.getElementById('nb').textContent = score > 0 && score >= loadBest() ? 'YENİ REKOR! 🏆' : ''; }, 1200);
   }
+
+  window.addEventListener('beforeunload', () => { if (!gameOver) saveGameState(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && !gameOver) saveGameState(); });
 
   document.getElementById('menu-best').textContent = loadBest();
   goMenu();
